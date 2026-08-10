@@ -170,13 +170,20 @@ class WeatherBot(discord.Client):
 
     async def check_and_post(self) -> None:
         settings = self.settings
-        points, cycle_utc = weather.build_forecast(settings)
-        weather.clean_cache(settings)
+
+        def fetch_sync() -> tuple[list[HourPoint], datetime | None, list[WeatherWindow], float | None]:
+            points, cycle_utc = weather.build_forecast(settings)
+            weather.clean_cache(settings)
+            if not points:
+                return [], None, [], None
+            windows = weather.find_windows(settings, points)
+            water_temp = weather.fetch_marine_data(settings, points)
+            return points, cycle_utc, windows, water_temp
+
+        points, cycle_utc, windows, water_temp = await asyncio.to_thread(fetch_sync)
         if not points:
             log.warning("No forecast data available; skipping.")
             return
-        windows = weather.find_windows(settings, points)
-        water_temp = weather.fetch_marine_data(settings, points)
         now_utc = datetime.now(ZoneInfo("UTC"))
         future_windows = [w for w in windows if w.end > now_utc]
         if not future_windows:

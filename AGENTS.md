@@ -51,6 +51,10 @@ affected mode) to confirm nothing broke.
   has **no scalar `WIND`** — compute speed from `UGRD`/`VGRD:10 m above ground`. `TCDC`
   is `TCDC:entire atmosphere`, precip is `PRATE:surface`, air temp is
   `TMP:2 m above ground`.
+- **Don't block the Discord event loop**: the HRRR download takes minutes, so the hourly
+  check runs inside `asyncio.to_thread` in `WeatherBot.check_and_post`. If you call
+  `build_forecast` inline in an async context you'll get gateway
+  "heartbeat blocked for more than 240 seconds" warnings.
 - **astral 3.2**: use `Observer(latitude=..., longitude=...)` with
   `sunrise(obs, date=..., tzinfo=...)`, not `LocationInfo`.
 - Timezones: forecast hours are UTC; messages use `TIMEZONE` (America/Los_Angeles).
