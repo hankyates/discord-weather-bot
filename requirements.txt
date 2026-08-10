@@ -1,0 +1,9 @@
+discord.py>=2.3.2
+herbie-data>=2024.10.0
+xarray>=2024.1.0
+cfgrib>=0.9.11
+eccodes>=2.32.0
+numpy>=1.26
+astral>=3.2
+requests>=2.28
+python-dotenv>=1.0.1
