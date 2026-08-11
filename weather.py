@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -25,6 +26,56 @@ MAX_CYCLE_BACKTRACK = 4
 CO_OPS_URL = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
 
 _OBSERVERS: dict[tuple[float, float], Observer] = {}
+
+
+def _point_to_dict(p: HourPoint) -> dict:
+    return {
+        "valid_time": p.valid_time.isoformat(),
+        "wind_kt": p.wind_kt,
+        "cloud_pct": p.cloud_pct,
+        "rain_mmhr": p.rain_mmhr,
+        "is_good": p.is_good,
+        "air_temp_f": p.air_temp_f,
+        "tide": p.tide,
+    }
+
+
+def _point_from_dict(d: dict) -> HourPoint:
+    return HourPoint(
+        valid_time=datetime.fromisoformat(d["valid_time"]),
+        wind_kt=d.get("wind_kt"),
+        cloud_pct=d.get("cloud_pct"),
+        rain_mmhr=d.get("rain_mmhr"),
+        is_good=d.get("is_good", False),
+        air_temp_f=d.get("air_temp_f"),
+        tide=d.get("tide", ""),
+    )
+
+
+def load_forecast_cache(settings: Settings) -> tuple[datetime, list[HourPoint]] | None:
+    path = settings.forecast_cache_file
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+        cycle = datetime.fromisoformat(data["cycle"])
+        points = [_point_from_dict(p) for p in data["points"]]
+        if not points:
+            return None
+        return cycle, points
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def save_forecast_cache(settings: Settings, points: list[HourPoint], cycle: datetime) -> None:
+    payload = {
+        "cycle": cycle.isoformat(),
+        "points": [_point_to_dict(p) for p in points],
+    }
+    try:
+        with open(settings.forecast_cache_file, "w") as fh:
+            json.dump(payload, fh, indent=2)
+    except OSError:
+        log.warning("Could not write forecast cache to %s", settings.forecast_cache_file)
 
 
 def _observer(settings: Settings) -> Observer:
@@ -340,6 +391,15 @@ def build_forecast(settings: Settings) -> tuple[list[HourPoint], datetime | None
     if latest is None:
         log.warning("No HRRR cycle available")
         return [], None
+    cached = load_forecast_cache(settings)
+    if cached is not None:
+        cache_cycle, cached_points = cached
+        if cache_cycle == latest and cached_points:
+            log.info(
+                "Forecast unchanged: reusing cached %d hours for cycle %s UTC",
+                len(cached_points), latest.isoformat(),
+            )
+            return cached_points, latest
     log.info("Latest HRRR cycle: %s UTC", latest.isoformat())
     total = settings.horizon_hours + 1
     points: list[HourPoint] = []
@@ -350,6 +410,8 @@ def build_forecast(settings: Settings) -> tuple[list[HourPoint], datetime | None
             points.append(point)
     points.sort(key=lambda p: p.valid_time)
     log.info("Fetched %d/%d forecast hours", len(points), total)
+    if points:
+        save_forecast_cache(settings, points, latest)
     return points, latest
 
 

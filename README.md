@@ -1,6 +1,6 @@
 # Discord Weather Window Bot
 
-Posts to Discord when the latest [HRRR](https://rapidrefresh.noaa.gov/hrrr/) forecast shows good sailing weather for Port Townsend Bay: wind **5-10 kt**, **sunny** (< 20% clouds), and **no rain** (< 0.1 mm/hr), for a window that lasts **longer than 3 hours** and falls **within daylight hours**. Each post also includes the **air temperature**, **water temperature**, and **tidal state (flood/ebb)** for the window. It runs hourly, checks the full 48-hour forecast, and announces each good-weather window once, with the times in Pacific time.
+Posts to Discord when the latest [HRRR](https://rapidrefresh.noaa.gov/hrrr/) forecast shows good sailing weather for Port Townsend Bay: wind **5-10 kt**, **sunny** (< 20% clouds), and **no rain** (< 0.1 mm/hr), for a window that lasts **longer than 3 hours** and falls **within daylight hours**. Each post also includes the **air temperature**, **water temperature**, and **tidal state (flood/ebb)** for the window. It checks every 8 hours, scans the full 48-hour forecast, and announces each good-weather window once, with the times in Pacific time.
 
 ## Setup
 
@@ -63,7 +63,8 @@ channel ID was copied with Developer Mode enabled.
 - For each of the next `HORIZON_HOURS` (default 48), extracts the HRRR grid point nearest `LAT`/`LON` and reads 10 m `WIND`, `TCDC` (total cloud cover), and `PRATE` (precipitation rate).
 - Marks each hour good when all conditions pass (plus daylight, if `REQUIRE_DAYLIGHT` is on), merges consecutive good hours into windows, and only keeps windows lasting **strictly longer** than `MIN_WINDOW_HOURS`.
 - Adds air temperature (HRRR 2 m) per hour, plus current water temperature and predicted flood/ebb tide state for the window from NOAA CO-OPS at `COOPS_STATION` (default `9444900`, Port Townsend). These are informational only and do not affect filtering.
-- `check_minute` (default 50) controls when each hour the check runs, since HRRR cycles usually land 45-60 minutes after the top of the hour.
+- `check_minute` (default 50) and `check_interval_hours` (default 8) control when the check runs: at `check_minute` past the hour, on hours divisible by `check_interval_hours` (e.g. `08:50`, `16:50`, `00:50` Pacific).
+- The forecast is re-downloaded only when a newer HRRR cycle is available. The latest per-hour results are cached in `forecast_cache.json`; if the newest cycle is unchanged (e.g. after a restart or delayed HRRR), the cached hours are reused and nothing is re-posted (each window is still announced only once via `state.json`).
 - Announced windows are recorded in `state.json`, so each window is posted once, not re-spammed every cycle.
 
 ## Configuration
@@ -81,7 +82,9 @@ channel ID was copied with Developer Mode enabled.
 | `MIN_WINDOW_HOURS` | `3` | Window must last strictly longer than this (default `3` -> 4+ hours) |
 | `REQUIRE_DAYLIGHT` | `true` | Only report windows within sunrise-to-sunset hours |
 | `TIMEZONE` | `America/Los_Angeles` | Message timezone |
-| `CHECK_MINUTE` | `50` | Minute of each hour to run the check |
+| `CHECK_MINUTE` | `50` | Minute of each check |
+| `CHECK_INTERVAL_HOURS` | `8` | Run a check every N hours (aligned to the clock) |
+| `FORECAST_CACHE_FILE` | `forecast_cache.json` | Persisted per-hour forecast points (skips re-download/re-post when the HRRR cycle hasn't changed) |
 
 ## Notes
 

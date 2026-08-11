@@ -156,11 +156,13 @@ class WeatherBot(discord.Client):
 
     async def scheduler(self) -> None:
         zone = ZoneInfo(self.settings.timezone)
+        interval = self.settings.check_interval_hours
         while True:
             now = datetime.now(zone)
             next_run = now.replace(minute=self.settings.check_minute, second=0, microsecond=0)
+            next_run = next_run.replace(hour=(next_run.hour // interval) * interval)
             if next_run <= now:
-                next_run += timedelta(hours=1)
+                next_run += timedelta(hours=interval)
             log.info("Next check scheduled for %s", next_run.isoformat())
             await asyncio.sleep((next_run - now).total_seconds())
             try:

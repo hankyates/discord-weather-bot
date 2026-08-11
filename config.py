@@ -25,8 +25,10 @@ class Settings:
     require_daylight: bool = True
     timezone: str = "America/Los_Angeles"
     check_minute: int = 50
+    check_interval_hours: int = 8
     cache_dir: Path = Path("cache")
     state_file: Path = Path("state.json")
+    forecast_cache_file: Path = Path("forecast_cache.json")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -46,6 +48,8 @@ class Settings:
             in ("1", "true", "yes", "on"),
             timezone=os.getenv("TIMEZONE", "America/Los_Angeles"),
             check_minute=int(os.getenv("CHECK_MINUTE", "50")),
+            check_interval_hours=int(os.getenv("CHECK_INTERVAL_HOURS", "8")),
             cache_dir=Path(os.getenv("CACHE_DIR", "cache")),
             state_file=Path(os.getenv("STATE_FILE", "state.json")),
+            forecast_cache_file=Path(os.getenv("FORECAST_CACHE_FILE", "forecast_cache.json")),
         )

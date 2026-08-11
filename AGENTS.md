@@ -35,7 +35,8 @@ affected mode) to confirm nothing broke.
   `--test-post`, `--debug-perms`, `--verbose`.
 - `weather.py` — HRRR fetch (`build_forecast`, `fetch_point_hour` with multi-cycle
   backtrack), `find_windows`, `fetch_marine_data` (CO-OPS water temp + tides),
-  `is_daylight` (astral), `clean_cache`.
+  `is_daylight` (astral), `clean_cache`, plus the on-disk forecast cache
+  (`load_forecast_cache`/`save_forecast_cache`).
 - `messaging.py` — `build_embed` builds the Discord embed.
 - `config.py` — `Settings.from_env()`. Calls `load_dotenv()` on import, so `.env` is read
   from the current working directory.
@@ -62,6 +63,9 @@ affected mode) to confirm nothing broke.
 - NOAA CO-OPS returns data in UTC. Tide labels (Flood/Ebb) are informational only and do
   not affect window filtering.
 - GRIB downloads are cached under `cache/` and removed by `clean_cache` after each run.
+  The computed per-hour points persist in `forecast_cache.json` (gitignored) and are reused
+  when the latest HRRR cycle is unchanged, so unchanged forecasts are not re-downloaded or
+  re-posted. `state.json` dedups announced windows across restarts.
 
 ## Conventions
 

@@ -1,6 +1,7 @@
 .env
 cache/
 state.json
+forecast_cache.json
 logs/
 __pycache__/
 *.pyc
