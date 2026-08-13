@@ -26,6 +26,8 @@ def sample_windows(settings: Settings) -> list[WeatherWindow]:
         HourPoint(
             valid_time=now + timedelta(hours=i),
             wind_kt=7.0,
+            gust_kt=13.0,
+            wind_dir="NNW",
             cloud_pct=5.0,
             rain_mmhr=0.0,
             is_good=True,
@@ -126,8 +128,8 @@ async def run_once(settings: Settings) -> None:
     if not points:
         log.error("No forecast data could be fetched.")
         return
-    windows = weather.find_windows(settings, points)
     water_temp = weather.fetch_marine_data(settings, points)
+    windows = weather.find_windows(settings, points)
     now_local = datetime.now(ZoneInfo(settings.timezone))
 
     good_count = sum(1 for p in points if p.is_good)
@@ -178,8 +180,8 @@ class WeatherBot(discord.Client):
             weather.clean_cache(settings)
             if not points:
                 return [], None, [], None
-            windows = weather.find_windows(settings, points)
             water_temp = weather.fetch_marine_data(settings, points)
+            windows = weather.find_windows(settings, points)
             return points, cycle_utc, windows, water_temp
 
         points, cycle_utc, windows, water_temp = await asyncio.to_thread(fetch_sync)

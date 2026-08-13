@@ -21,7 +21,15 @@ def _format_hour(hour: HourPoint, settings: Settings) -> str:
     local = hour.valid_time.astimezone(_tz(settings))
     sun = "sunny" if hour.cloud_pct < settings.cloud_max_pct else "cloudy"
     rain = "dry" if hour.rain_mmhr < settings.rain_max_mmhr else f"{hour.rain_mmhr:.1f} mm"
-    parts = [f"{local:%I:%M %p}", f"{hour.wind_kt:.0f} kt", sun, rain]
+    wind = (
+        f"{hour.wind_kt:.0f}-{hour.gust_kt:.0f} kt"
+        if hour.gust_kt is not None
+        else f"{hour.wind_kt:.0f} kt"
+    )
+    parts = [f"{local:%I:%M %p}", wind]
+    if hour.wind_dir:
+        parts.append(hour.wind_dir)
+    parts.extend([sun, rain])
     if hour.air_temp_f is not None:
         parts.append(f"{hour.air_temp_f:.0f}F")
     if hour.tide:
@@ -61,11 +69,12 @@ def build_embed(
     embed = discord.Embed(title=TITLE, color=COLOR)
     lines = [
         "Conditions: wind **{min:.0f}-{max:.0f} kt** | sunny (<{cloud:.0f}% clouds) "
-        "| no rain (<{rain:.1f} mm/hr)".format(
+        "| no rain (<{rain:.1f} mm/hr) | air+water temp **> {sum:.0f}F**".format(
             min=settings.wind_min_kt,
             max=settings.wind_max_kt,
             cloud=settings.cloud_max_pct,
             rain=settings.rain_max_mmhr,
+            sum=settings.min_air_water_sum_f,
         ),
         f"Window must last longer than {settings.min_window_hours:.0f} hours"
         + (" and fall within daylight hours" if settings.require_daylight else ""),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone as tz
@@ -21,17 +22,29 @@ log = logging.getLogger(__name__)
 M_PER_S_TO_KT = 1.9438444924406046
 KG_M2_S_TO_MM_HR = 3600.0
 
-SEARCH_STRING = r":(?:UGRD|VGRD):10 m above ground|:TCDC:entire atmosphere|:PRATE:surface|:TMP:2 m above ground"
+SEARCH_STRING = r":(?:UGRD|VGRD):10 m above ground|:TCDC:entire atmosphere|:PRATE:surface|:TMP:2 m above ground|:GUST:surface"
 MAX_CYCLE_BACKTRACK = 4
 CO_OPS_URL = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
 
 _OBSERVERS: dict[tuple[float, float], Observer] = {}
+
+WINDS = [
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+]
+
+
+def _cardinal(deg: float) -> str:
+    idx = int((deg % 360.0) / 22.5 + 0.5) % 16
+    return WINDS[idx]
 
 
 def _point_to_dict(p: HourPoint) -> dict:
     return {
         "valid_time": p.valid_time.isoformat(),
         "wind_kt": p.wind_kt,
+        "gust_kt": p.gust_kt,
+        "wind_dir": p.wind_dir,
         "cloud_pct": p.cloud_pct,
         "rain_mmhr": p.rain_mmhr,
         "is_good": p.is_good,
@@ -44,6 +57,8 @@ def _point_from_dict(d: dict) -> HourPoint:
     return HourPoint(
         valid_time=datetime.fromisoformat(d["valid_time"]),
         wind_kt=d.get("wind_kt"),
+        gust_kt=d.get("gust_kt"),
+        wind_dir=d.get("wind_dir", ""),
         cloud_pct=d.get("cloud_pct"),
         rain_mmhr=d.get("rain_mmhr"),
         is_good=d.get("is_good", False),
@@ -103,6 +118,8 @@ class HourPoint:
     cloud_pct: float | None
     rain_mmhr: float | None
     is_good: bool = False
+    gust_kt: float | None = None
+    wind_dir: str = ""
     air_temp_f: float | None = None
     tide: str = ""
 
@@ -193,9 +210,11 @@ def _to_air_temp_f(da, idx: tuple[int, int]) -> float:
     return value
 
 
-def _extract_point(datasets, settings: Settings) -> tuple[float | None, float | None, float | None, float | None]:
+def _extract_point(
+    datasets, settings: Settings
+) -> tuple[float | None, float | None, float | None, float | None, float | None, str]:
     if not datasets:
-        return None, None, None, None
+        return None, None, None, None, None, ""
     idx = _nearest_index(datasets[0], settings.lat, settings.lon)
     u = _find_da(datasets, ["u wind component"])
     if u is None:
@@ -210,10 +229,13 @@ def _extract_point(datasets, settings: Settings) -> tuple[float | None, float | 
     if rain is None:
         rain = _find_da(datasets, ["prate"])
     if u is None or v is None or cloud is None or rain is None:
-        return None, None, None, None
+        return None, None, None, None, None, ""
     u_kt = _to_wind_kt(u, idx)
     v_kt = _to_wind_kt(v, idx)
     wind_kt = (u_kt**2 + v_kt**2) ** 0.5
+    gust = _find_da(datasets, ["gust"])
+    gust_kt = _to_wind_kt(gust, idx) if gust is not None else None
+    wind_dir = _cardinal(math.degrees(math.atan2(-u_kt, -v_kt)))
     air = _find_da(datasets, ["temperature"])
     air_f = _to_air_temp_f(air, idx) if air is not None else None
     return (
@@ -221,7 +243,23 @@ def _extract_point(datasets, settings: Settings) -> tuple[float | None, float | 
         _to_cloud_pct(cloud, idx),
         _to_rain_mmhr(rain, idx),
         air_f,
+        gust_kt,
+        wind_dir,
     )
+
+
+def _evaluate_good(settings: Settings, point: HourPoint, water_temp_f: float | None) -> bool:
+    if not (settings.wind_min_kt <= point.wind_kt <= settings.wind_max_kt):
+        return False
+    if point.cloud_pct >= settings.cloud_max_pct:
+        return False
+    if point.rain_mmhr >= settings.rain_max_mmhr:
+        return False
+    if settings.require_daylight and not is_daylight(settings, point.valid_time):
+        return False
+    if point.air_temp_f is None or water_temp_f is None:
+        return False
+    return point.air_temp_f + water_temp_f > settings.min_air_water_sum_f
 
 
 def fetch_point_hour(settings: Settings, latest: datetime, target_fxx: int) -> HourPoint | None:
@@ -261,30 +299,28 @@ def fetch_point_hour(settings: Settings, latest: datetime, target_fxx: int) -> H
             continue
         elapsed = time.monotonic() - t0
         datasets = ds if isinstance(ds, list) else [ds]
-        wind, cloud, rain, air_f = _extract_point(datasets, settings)
+        wind, cloud, rain, air_f, gust_kt, wind_dir = _extract_point(datasets, settings)
         if wind is None:
             log.warning("F%02d: could not extract point data from %s F%02d", target_fxx, cycle, fxx)
             continue
         valid_time = _as_utc(datasets[0].valid_time.values)
         log.info(
-            "F%02d: done in %.1fs -> valid %s UTC: wind=%4.1f kt cloud=%4.0f%% rain=%5.3f mm/hr air=%4.0fF",
-            target_fxx, elapsed, valid_time.strftime("%m-%d %H:%M"), wind, cloud, rain,
+            "F%02d: done in %.1fs -> valid %s UTC: wind=%4.1f kt gust=%4.1f kt %s cloud=%4.0f%% rain=%5.3f mm/hr air=%4.0fF",
+            target_fxx, elapsed, valid_time.strftime("%m-%d %H:%M"), wind,
+            gust_kt if gust_kt is not None else float("nan"), wind_dir, cloud, rain,
             air_f if air_f is not None else float("nan"),
         )
-        is_good = (
-            settings.wind_min_kt <= wind <= settings.wind_max_kt
-            and cloud < settings.cloud_max_pct
-            and rain < settings.rain_max_mmhr
-            and (not settings.require_daylight or is_daylight(settings, valid_time))
-        )
-        return HourPoint(
+        point = HourPoint(
             valid_time=valid_time,
             wind_kt=wind,
+            gust_kt=gust_kt,
+            wind_dir=wind_dir,
             cloud_pct=cloud,
             rain_mmhr=rain,
-            is_good=is_good,
             air_temp_f=air_f,
         )
+        point.is_good = _evaluate_good(settings, point, None)
+        return point
     log.warning("F%02d: no data found in any recent cycle", target_fxx)
     return None
 
@@ -365,6 +401,8 @@ def fetch_marine_data(settings: Settings, points: list[HourPoint]) -> float | No
     water_temp = _fetch_water_temp(settings)
     if not points:
         return water_temp
+    for point in points:
+        point.is_good = _evaluate_good(settings, point, water_temp)
     start = min(p.valid_time for p in points)
     end = max(p.valid_time for p in points) + timedelta(days=1)
     events = _fetch_tide_events(settings, start, end)

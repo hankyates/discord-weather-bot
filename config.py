@@ -19,6 +19,7 @@ class Settings:
     wind_max_kt: float = 10.0
     cloud_max_pct: float = 20.0
     rain_max_mmhr: float = 0.1
+    min_air_water_sum_f: float = 100.0
     coops_station: str = "9444900"
     horizon_hours: int = 48
     min_window_hours: float = 3.0
@@ -41,6 +42,7 @@ class Settings:
             wind_max_kt=float(os.getenv("WIND_MAX_KT", "10")),
             cloud_max_pct=float(os.getenv("CLOUD_MAX_PCT", "20")),
             rain_max_mmhr=float(os.getenv("RAIN_MAX_MMHR", "0.1")),
+            min_air_water_sum_f=float(os.getenv("MIN_AIR_WATER_SUM_F", "100")),
             coops_station=os.getenv("COOPS_STATION", "9444900"),
             horizon_hours=int(os.getenv("HORIZON_HOURS", "48")),
             min_window_hours=float(os.getenv("MIN_WINDOW_HOURS", "3")),
